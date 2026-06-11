@@ -53,7 +53,10 @@ try:
 except ImportError:
     GREEN = RED = YELLOW = CYAN = MAGENTA = BOLD = DIM = RESET = ""
 
-BASE_URL = "https://api.binance.com"
+# api.binance.com est géobloqué dans certaines régions (ex. IP américaines) ;
+# data-api.binance.vision est le miroir officiel public des données de marché.
+BASE_URLS = ["https://api.binance.com", "https://data-api.binance.vision"]
+_base_idx = [0]
 
 # Actifs exclus du scan : stablecoins, fiat, jetons "wrappés" (doublons)
 STABLE_BASES = {
@@ -82,18 +85,28 @@ def _session() -> requests.Session:
     return _tls.s
 
 
-def get_json(path: str, params: dict | None = None, retries: int = 3):
-    url = BASE_URL + path
+def _switch_mirror():
+    _base_idx[0] = min(_base_idx[0] + 1, len(BASE_URLS) - 1)
+
+
+def get_json(path: str, params: dict | None = None, retries: int = 4):
     for attempt in range(retries):
+        url = BASE_URLS[_base_idx[0]] + path
         try:
             r = _session().get(url, params=params, timeout=15)
             if r.status_code in (429, 418):  # rate limit / ban temporaire
                 wait = int(r.headers.get("Retry-After", 10))
                 time.sleep(wait)
                 continue
+            if r.status_code in (451, 403) and _base_idx[0] < len(BASE_URLS) - 1:
+                _switch_mirror()  # géo-blocage → bascule sur le miroir
+                continue
             r.raise_for_status()
             return r.json()
         except requests.RequestException:
+            if _base_idx[0] < len(BASE_URLS) - 1:
+                _switch_mirror()  # API principale injoignable → miroir
+                continue
             if attempt == retries - 1:
                 return None
             time.sleep(1.5 * (attempt + 1))
