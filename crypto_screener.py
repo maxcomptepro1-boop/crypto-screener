@@ -36,7 +36,7 @@ import threading
 import time
 import warnings
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
@@ -750,6 +750,7 @@ def build_plan(m: dict, capital: float, risk_pct: float) -> dict:
         "rr1": rr1, "rr2": rr2,
         "qty": qty, "notional": notional, "capped": capped,
         "risk_amount": risk_amount,
+        "deadline": (datetime.now() + timedelta(days=TIME_STOP_DAYS)).strftime("%d/%m/%Y"),
     }
 
 
@@ -869,7 +870,8 @@ def print_card(rank: int, m: dict, plan: dict, capital: float, risk_pct: float):
     if np.isfinite(m["prox_high"]):
         dist_h = (m["high200"] / m["price"] - 1) * 100
         print(f"    Plus haut 200j : {fmt_price(m['high200'])} ({'+' if dist_h >= 0 else ''}{dist_h:.1f}%)")
-    print(f"    ⏰ Sortie temporelle : clôturer après {TIME_STOP_DAYS} j si ni stop ni objectif touché.")
+    print(f"    ⏰ Date limite de vente : {plan['deadline']} — si ni stop ni objectif "
+          f"touché d'ici là, tout revendre ce jour-là.")
     if m["warns"]:
         for w in m["warns"]:
             print(f"  {YELLOW}⚠ {w}{RESET}")
