@@ -12,13 +12,13 @@ multi-piliers fondé sur des concepts éprouvés, et filtre de régime de march�
   sortie temporelle 14 jours).
 - **`crypto_analyser.py`** — analyse mono-actif horaire (RSI, MACD, Bollinger,
   EMA, stochastique, volume).
-- **`stock_screener.py`** — screener actions (S&P 500 / Nasdaq 100 / Dow 30 via
-  Yahoo Finance). Mêmes piliers techniques que le crypto **plus** un pilier
-  fondamental (valorisation, croissance, rentabilité, santé financière) et les
-  **lentilles des grands investisseurs** (Buffett, Graham, Lynch, Greenblatt,
-  O'Neil, Minervini, Fisher, Templeton, Druckenmiller, Piotroski). Régime piloté
-  par le S&P 500 + breadth + VIX. Plan de trade complet (stop ATR, objectifs
-  2R/4R, taille à risque fixe, sortie temporelle 14 jours).
+- **`stock_investor.py`** — sélecteur d'actions **qualité + croissance pour le
+  long terme** (horizon 6 mois à plusieurs années, philosophie Buffett / Lynch /
+  Fisher), univers S&P 500 / Nasdaq 100 / Dow 30 via Yahoo Finance. Score sur 6
+  piliers (qualité, croissance, santé financière, valorisation, tendance long
+  terme + doctrines des grands investisseurs). Pas de stop serré : il fournit la
+  thèse « pourquoi détenir », les signaux de vente, une allocation de portefeuille
+  suggérée et une date de revue trimestrielle.
 
 ## Installation
 
@@ -37,11 +37,11 @@ python3 crypto_screener.py --json out.json      # export JSON
 ```
 
 ```bash
-python3 stock_screener.py                        # scan S&P 500, top 15
-python3 stock_screener.py --universe nasdaq100   # autre univers
-python3 stock_screener.py AAPL NVDA MSFT         # analyse ciblée
-python3 stock_screener.py --no-fundamentals      # technique seul (rapide)
-python3 stock_screener.py --json out.json        # export JSON
+python3 stock_investor.py                         # S&P 500, top 20 (long terme)
+python3 stock_investor.py --universe nasdaq100    # autre univers
+python3 stock_investor.py AAPL MSFT GOOGL         # analyse ciblée
+python3 stock_investor.py --portfolio 12 --capital 10000  # portefeuille suggéré
+python3 stock_investor.py --json out.json         # export JSON
 ```
 
 Aucune clé API requise (endpoints publics Binance ; Yahoo Finance pour les actions).
