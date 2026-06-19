@@ -14,11 +14,20 @@ multi-piliers fondé sur des concepts éprouvés, et filtre de régime de march�
   EMA, stochastique, volume).
 - **`stock_investor.py`** — sélecteur d'actions **qualité + croissance pour le
   long terme** (horizon 6 mois à plusieurs années, philosophie Buffett / Lynch /
-  Fisher), univers S&P 500 / Nasdaq 100 / Dow 30 via Yahoo Finance. Score sur 6
-  piliers (qualité, croissance, santé financière, valorisation, tendance long
-  terme + doctrines des grands investisseurs). Pas de stop serré : il fournit la
-  thèse « pourquoi détenir », les signaux de vente, une allocation de portefeuille
-  suggérée et une date de revue trimestrielle.
+  Fisher). Univers S&P 500 / Nasdaq 100 / Dow 30 / S&P 1500 / `all` (~1600 titres
+  US + international) via Yahoo Finance. Score sur 5 piliers + **15 doctrines de
+  grands investisseurs** (Buffett, Lynch, Fisher, Greenblatt, Graham, Schloss,
+  K. Fisher, Neff, Dreman, Zweig, Terry Smith, Akre, Rule of 40, Novy-Marx,
+  Piotroski). Inclut : **détecteur de pépites émergentes** (1-2 actions à fort
+  potentiel signalées), **détecteur de cyclicité** (alerte « pic de cycle ») et
+  **tags thématiques** (IA, énergie, défense, santé…). Pas de stop serré : thèse
+  « pourquoi détenir », signaux de vente, allocation de portefeuille, revue
+  trimestrielle.
+- **`stock_backtest.py`** — backtest honnête du moteur tendance/momentum de
+  `stock_investor` sur l'historique réel des cours (rééquilibrage mensuel, top-N
+  par momentum 12-1 au-dessus de la moyenne 200 j), comparé à l'achat-conservation
+  du S&P 500. Mesure la partie *prix* uniquement (les fondamentaux historiques ne
+  sont pas disponibles gratuitement) ; biais de survivance signalé.
 
 ## Installation
 

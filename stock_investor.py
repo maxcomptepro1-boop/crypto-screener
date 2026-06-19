@@ -723,6 +723,76 @@ def emerging_score(tr: dict, f: dict) -> dict:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  COUCHE THÉMATIQUE & DÉTECTION DE CYCLICITÉ
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Mappe secteur/industrie Yahoo vers de grands thèmes lisibles.
+THEME_RULES = [
+    ("🤖 IA & Semis", ("semiconductor", "semi-conduct")),
+    ("💻 Tech & Logiciel", ("software", "information technology", "internet", "cloud", "it services")),
+    ("🛡️ Défense & Aéro", ("aerospace", "defense", "défense")),
+    ("🛢️ Énergie", ("oil", "gas", "petro", "energy", "drilling", "refin")),
+    ("☀️ Énergie verte", ("solar", "renewable", "wind", "clean energy")),
+    ("🧬 Santé & Biotech", ("biotech", "drug", "pharma", "health", "medical", "life sciences", "diagnostic")),
+    ("🏦 Finance", ("bank", "insurance", "financial", "capital markets", "asset management", "credit")),
+    ("🚢 Transport & Logistique", ("marine", "shipping", "airlines", "railroad", "trucking", "logistics", "freight")),
+    ("⛏️ Matériaux & Mines", ("mining", "metals", "materials", "chemicals", "steel", "copper", "gold")),
+    ("🛒 Consommation", ("retail", "consumer", "apparel", "restaurant", "beverage", "food", "luxury")),
+    ("🏠 Immobilier", ("reit", "real estate", "immobil")),
+    ("⚡ Services publics", ("utilities", "utility", "electric", "water")),
+    ("🏭 Industrie", ("industrial", "machinery", "construction", "engineering", "manufactur")),
+    ("📡 Télécoms & Médias", ("telecom", "media", "entertainment", "communication", "advertising")),
+]
+
+# Cycliques « durs » liés aux matières premières / au fret : bénéfices très
+# dépendants d'un cycle de prix → vraie prudence pour du long terme.
+COMMODITY_CYCLICAL = ("oil", "gas", "petro", "energy", "drilling", "refin",
+                      "marine", "shipping", "mining", "metals", "steel",
+                      "copper", "materials", "chemicals", "coal", "commodity")
+# Cycliques « doux » : sensibles au cycle économique mais à croissance possible
+# (semis, auto, aérien, construction) → simple note, pas de pénalité de fond.
+SOFT_CYCLICAL = ("semiconductor", "semi-conduct", "auto", "airlines",
+                 "homebuild", "construction")
+
+
+def theme_of(f: dict) -> str:
+    txt = (str(f.get("industry") or "") + " " + str(f.get("sector") or "")).lower()
+    for label, keys in THEME_RULES:
+        if any(k in txt for k in keys):
+            return label
+    return "🏷️ Divers"
+
+
+def cycle_flag(f: dict, m: dict) -> None:
+    """Repère les sociétés cycliques au sommet de leur cycle (piège classique :
+    bénéfices records + valorisation très basse = souvent un PIC, pas un point
+    d'entrée durable — l'avertissement de Peter Lynch sur les cycliques)."""
+    txt = (str(f.get("industry") or "") + " " + str(f.get("sector") or "")).lower()
+    hard = any(k in txt for k in COMMODITY_CYCLICAL)
+    soft = any(k in txt for k in SOFT_CYCLICAL)
+    m["cyclical"] = hard or soft
+    m["hard_cyclical"] = hard
+    m["peak_risk"] = False
+    if not (hard or soft):
+        return
+    eg = _f(f.get("earningsGrowth"))
+    eqg = _f(f.get("earningsQuarterlyGrowth"))
+    pe = _f(f.get("trailingPE"))
+    growth_spike = (np.isfinite(eg) and eg > 0.6) or (np.isfinite(eqg) and eqg > 0.8)
+    cheap_top = np.isfinite(pe) and 0 < pe < 12
+    if hard and growth_spike and cheap_top:
+        m["peak_risk"] = True
+        m["warns"].append("Cyclique au sommet probable : bénéfices records + prix très bas "
+                          "= souvent un PIC de cycle, pas un achat long terme durable.")
+    elif hard:
+        m["warns"].append("Société cyclique (matières premières / fret) : ses bénéfices "
+                          "dépendent d'un cycle de prix — surveille le retournement.")
+    elif soft:
+        m["warns"].append("Secteur sensible au cycle économique (semis, auto, construction) "
+                          "— normal d'avoir des hauts et des bas.")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  ANALYSE COMPLÈTE D'UN TITRE
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -743,7 +813,14 @@ def analyse(ticker: str, df: pd.DataFrame, f: dict) -> dict:
             + 0.20 * m["s_val"] + 0.10 * m["s_trend"])
     investor_lenses(m, f)
     m["lens_bonus"] = min(len(m["lenses"]) * 1.6, 15.0)
-    m["score"] = min(100.0, base + m["lens_bonus"])
+
+    # Thème macro + détection de cyclicité (peut ajouter des avertissements)
+    m["theme"] = theme_of(f)
+    cycle_flag(f, m)
+    # Décote des cycliques au sommet de cycle : ils ne sont PAS des « à garder »
+    # durables même si leurs chiffres instantanés sont spectaculaires.
+    m["cycle_penalty"] = 15.0 if m["peak_risk"] else (5.0 if m.get("hard_cyclical") else 0.0)
+    m["score"] = max(0.0, min(100.0, base + m["lens_bonus"] - m["cycle_penalty"]))
 
     # — Score « pépite émergente » (logique distincte du score long terme) —
     em = emerging_score(tr, f)
@@ -847,8 +924,14 @@ def print_pepites(pepites: list[dict]):
 
 def print_card(rank: int, m: dict, alloc: float | None, capital: float):
     note, ncol = rating(m["score"])
+    cyc = ""
+    if m.get("peak_risk"):
+        cyc = f"  {YELLOW}🔄 cyclique (pic probable){RESET}"
+    elif m.get("cyclical"):
+        cyc = f"  {DIM}🔄 cyclique{RESET}"
     print(f"\n{BOLD}{'═' * 78}{RESET}")
-    print(f"{BOLD}  #{rank}  {CYAN}{m['symbol']}{RESET}{BOLD}  {m['name']}{RESET}  {DIM}{m['sector']}{RESET}")
+    print(f"{BOLD}  #{rank}  {CYAN}{m['symbol']}{RESET}{BOLD}  {m['name']}{RESET}  "
+          f"{DIM}{m.get('theme', '')}{RESET}{cyc}")
     print(f"{'─' * 78}")
     p12 = f"{m['perf12m']:+.1f}%" if np.isfinite(m["perf12m"]) else "n/d"
     up = f"   Potentiel analystes {m['upside']:+.0f}%" if np.isfinite(m["upside"]) else ""
