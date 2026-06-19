@@ -626,6 +626,103 @@ def investor_lenses(m: dict, f: dict) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  DÉTECTEUR DE PÉPITES ÉMERGENTES (logique opposée : croissance / momentum /
+#  petite capi — les futurs ×3/×10, plus risquées)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def human_cap(v: float) -> str:
+    if not np.isfinite(v):
+        return "n/d"
+    if v >= 1e12:
+        return f"{v / 1e12:.1f} Bn$"  # trillion
+    if v >= 1e9:
+        return f"{v / 1e9:.1f} Md$"
+    return f"{v / 1e6:.0f} M$"
+
+
+def emerging_score(tr: dict, f: dict) -> dict:
+    """Note /100 le potentiel d'une PÉPITE émergente : forte croissance, petite
+    capi (de la place pour grandir), momentum / force relative, tout en exigeant
+    un bilan qui tient (éviter les faillites). Renvoie aussi les risques."""
+    g = lambda k: _f(f.get(k))
+    mcap = g("marketCap")
+    rg, rqg, eqg = g("revenueGrowth"), g("revenueQuarterlyGrowth"), g("earningsQuarterlyGrowth")
+    gm, om = g("grossMargins"), g("operatingMargins")
+    fcf, cash, debt = g("freeCashflow"), g("totalCash"), g("totalDebt")
+    cr = g("currentRatio")
+    p, d = 0.0, []
+
+    # — Croissance explosive (40) —
+    gp = 0
+    if np.isfinite(rg):
+        if rg > 0.40:
+            gp += 24
+        elif rg > 0.25:
+            gp += 18
+        elif rg > 0.15:
+            gp += 10
+        elif rg > 0.08:
+            gp += 4
+        d.append(f"CA {rg * 100:+.0f}%")
+    if np.isfinite(rqg) and rqg > 0.20:
+        gp += 8
+    if np.isfinite(eqg) and eqg > 0.25:
+        gp += 8
+    p += min(gp, 40)
+
+    # — Momentum / force relative (30) : déjà en train de surperformer (O'Neil) —
+    mp = 0
+    if tr["above_200"]:
+        mp += 10
+    p6, p12 = tr["perf6m"], tr["perf12m"]
+    if np.isfinite(p12) and p12 > 0:
+        mp += 10 if p12 > 30 else 5
+        d.append(f"12 mois {p12:+.0f}%")
+    if np.isfinite(p6) and p6 > 0:
+        mp += 6 if p6 > 20 else 3
+    if np.isfinite(tr["prox_high"]) and tr["prox_high"] >= 0.85:
+        mp += 4
+    p += min(mp, 30)
+
+    # — Taille : de la place pour grandir (15) —
+    sp = 0
+    if np.isfinite(mcap):
+        if 3e8 <= mcap <= 2e10:
+            sp += 15
+        elif 2e10 < mcap <= 5e10:
+            sp += 9
+        elif 5e10 < mcap <= 1e11:
+            sp += 4
+        elif mcap < 3e8:
+            sp += 4
+        d.append(f"capi {human_cap(mcap)}")
+    p += sp
+
+    # — Qualité de la croissance / survie (15) —
+    qp = 0
+    rule40 = (rg + om) * 100 if (np.isfinite(rg) and np.isfinite(om)) else np.nan
+    if np.isfinite(rule40) and rule40 >= 40:
+        qp += 7
+    if np.isfinite(gm) and gm > 0.50:
+        qp += 4
+    if (np.isfinite(fcf) and fcf > 0) or (np.isfinite(cash) and np.isfinite(debt) and cash > debt):
+        qp += 4
+    p += min(qp, 15)
+
+    # — Risques (affichés clairement) —
+    risk = []
+    if np.isfinite(cr) and cr < 1:
+        risk.append("liquidité court terme faible")
+    if np.isfinite(fcf) and fcf < 0 and not (np.isfinite(cash) and np.isfinite(debt) and cash > debt):
+        risk.append("brûle du cash (pas encore autofinancée)")
+    if np.isfinite(mcap) and mcap < 5e8:
+        risk.append("micro-capitalisation, très volatile")
+    if np.isfinite(g("trailingPE")) and g("trailingPE") > 60:
+        risk.append("valorisation très élevée (chute brutale possible)")
+    return {"score": min(p, 100), "detail": "  ".join(d), "risk": risk, "mcap": mcap}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  ANALYSE COMPLÈTE D'UN TITRE
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -647,6 +744,11 @@ def analyse(ticker: str, df: pd.DataFrame, f: dict) -> dict:
     investor_lenses(m, f)
     m["lens_bonus"] = min(len(m["lenses"]) * 1.6, 15.0)
     m["score"] = min(100.0, base + m["lens_bonus"])
+
+    # — Score « pépite émergente » (logique distincte du score long terme) —
+    em = emerging_score(tr, f)
+    m["emerging"], m["emerging_d"], m["emerging_risk"], m["mcap"] = (
+        em["score"], em["detail"], em["risk"], em["mcap"])
 
     # — Données pour la thèse & les signaux de vente —
     g = lambda k: _f(f.get(k))
@@ -720,6 +822,29 @@ def print_table(results: list[dict]):
     print(f"  {'─' * 112}")
 
 
+def print_pepites(pepites: list[dict]):
+    if not pepites:
+        return
+    print(f"\n{BOLD}{MAGENTA}{'═' * 78}{RESET}")
+    print(f"{BOLD}{MAGENTA}  🚀 PÉPITES À FORT POTENTIEL — {len(pepites)} action(s) qui pourrai(en)t exploser{RESET}")
+    print(f"{MAGENTA}  ⚠ Plus risquées que les valeurs « à détenir » : petites/moyennes capis,"
+          f" croissance rapide.{RESET}")
+    print(f"{BOLD}{MAGENTA}{'═' * 78}{RESET}")
+    for i, m in enumerate(pepites, 1):
+        up = f"   Cible analystes {m['upside']:+.0f}%" if np.isfinite(m.get("upside", np.nan)) else ""
+        print(f"\n  {BOLD}{MAGENTA}🚀 PÉPITE #{i} : {m['symbol']}{RESET}{BOLD} — {m['name']}{RESET}"
+              f"  {DIM}{m['sector']}{RESET}")
+        print(f"     Potentiel émergent {BOLD}{m['emerging']:.0f}/100{RESET} [{bar10(m['emerging'])}]"
+              f"   Prix {fmt(m['price'])} $US{up}")
+        print(f"     {DIM}Pourquoi : {m['emerging_d']}{RESET}")
+        if m["lenses"]:
+            print(f"     {GREEN}Doctrines : {', '.join(m['lenses'])}{RESET}")
+        if m["emerging_risk"]:
+            print(f"     {YELLOW}⚠ Risques : {' · '.join(m['emerging_risk'])}{RESET}")
+        else:
+            print(f"     {DIM}Risques : bilan correct, mais une pépite reste volatile.{RESET}")
+
+
 def print_card(rank: int, m: dict, alloc: float | None, capital: float):
     note, ncol = rating(m["score"])
     print(f"\n{BOLD}{'═' * 78}{RESET}")
@@ -787,6 +912,7 @@ def main():
     ap.add_argument("--top", type=int, default=20, help="taille du classement (défaut 20)")
     ap.add_argument("--detail", type=int, default=6, help="fiches détaillées (défaut 6)")
     ap.add_argument("--portfolio", type=int, default=0, help="construire un portefeuille de N lignes (allocation suggérée)")
+    ap.add_argument("--pepites", type=int, default=2, help="nb de pépites émergentes à fort potentiel à signaler (défaut 2)")
     ap.add_argument("--capital", type=float, default=10000.0, help="capital total du portefeuille (défaut 10000$)")
     ap.add_argument("--workers", type=int, default=12, help="requêtes fondamentaux parallèles (défaut 12)")
     ap.add_argument("--fund-cap", type=int, default=600,
@@ -844,7 +970,16 @@ def main():
     results.sort(key=lambda m: m["score"], reverse=True)
     top_n = results if targeted else results[:args.top]
 
+    # Sélection des pépites émergentes (logique distincte : on exclut les
+    # mastodontes pour garder l'esprit « qui émerge »).
+    pep_cands = [m for m in results
+                 if np.isfinite(m.get("mcap", np.nan)) and m["mcap"] < 1e11
+                 and m["emerging"] >= 55]
+    pep_cands.sort(key=lambda m: m["emerging"], reverse=True)
+    pepites = pep_cands[:max(0, args.pepites)]
+
     print_table(top_n)
+    print_pepites(pepites)
 
     # Construction d'un portefeuille équipondéré (conviction) si demandé
     alloc_map = {}
